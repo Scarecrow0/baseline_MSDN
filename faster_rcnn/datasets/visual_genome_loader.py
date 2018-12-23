@@ -48,15 +48,15 @@ class visual_genome(data.Dataset):
 
         self._object_classes = tuple(['__background__'] + cats['object'])
         self._predicate_classes = tuple(['__background__'] + cats['predicate'])
-        self._object_class_to_ind = dict(zip(self.object_classes, xrange(self.num_object_classes)))
-        self._predicate_class_to_ind = dict(zip(self.predicate_classes, xrange(self.num_predicate_classes)))
+        self._object_class_to_ind = dict(zip(self.object_classes, range(self.num_object_classes)))
+        self._predicate_class_to_ind = dict(zip(self.predicate_classes, range(self.num_predicate_classes)))
         self.inverse_weight_object = torch.ones(self.num_object_classes)
-        for idx in xrange(1, self.num_object_classes):
+        for idx in range(1, self.num_object_classes):
             self.inverse_weight_object[idx] = inverse_weight['object'][self._object_classes[idx]]
         self.inverse_weight_object = self.inverse_weight_object / self.inverse_weight_object.min()
         # print self.inverse_weight_object
         self.inverse_weight_predicate = torch.ones(self.num_predicate_classes)
-        for idx in xrange(1, self.num_predicate_classes):
+        for idx in range(1, self.num_predicate_classes):
             self.inverse_weight_predicate[idx] = inverse_weight['predicate'][self._predicate_classes[idx]]
         self.inverse_weight_predicate = self.inverse_weight_predicate / self.inverse_weight_predicate.min()
         # print self.inverse_weight_predicate
@@ -83,7 +83,10 @@ class visual_genome(data.Dataset):
     def __getitem__(self, index):
         # Sample random scales to use for each image in this batch
         target_scale = cfg.TRAIN.SCALES[npr.randint(0, high=len(cfg.TRAIN.SCALES))]
-        img = cv2.imread(osp.join(cfg.IMG_DATA_DIR, self.annotations[index]['path']))
+        img_path = osp.join(cfg.IMG_DATA_DIR, self.annotations[index]['path'])
+        img = cv2.imread(img_path)
+        if img is None:
+            print(img_path)
         img, im_scale = self._image_resize(img, target_scale, cfg.TRAIN.MAX_SIZE)
         im_info = np.array([img.shape[0], img.shape[1], im_scale], dtype=np.float32)
         img = Image.fromarray(img)

@@ -9,20 +9,20 @@ import torch.utils.model_zoo as model_zoo
 import torchvision.models as models
 import os.path as osp
 
-from utils.timer import Timer
-from utils.blob import im_list_to_blob
-from fast_rcnn.nms_wrapper import nms
-from fast_rcnn.bbox_transform import bbox_transform_inv_hdn, clip_boxes
-from fast_rcnn.config import cfg
-from utils.cython_bbox import bbox_overlaps
+from faster_rcnn.utils.timer import Timer
+from faster_rcnn.utils.blob import im_list_to_blob
+from faster_rcnn.fast_rcnn.nms_wrapper import nms
+from faster_rcnn.fast_rcnn.bbox_transform import bbox_transform_inv_hdn, clip_boxes
+from faster_rcnn.fast_rcnn.config import cfg
+from faster_rcnn.utils.cython_bbox import bbox_overlaps
 
-import network
-from network import Conv2d, FC
+import faster_rcnn.network
+from faster_rcnn.network import Conv2d, FC
 # from roi_pooling.modules.roi_pool_py import RoIPool
-from roi_pooling.modules.roi_pool import RoIPool
-from vgg16 import VGG16
+from faster_rcnn.roi_pooling.modules.roi_pool import RoIPool
+from faster_rcnn.vgg16 import VGG16
 
-import pdb
+import ipdb
 
 DEBUG = False
 TIME_IT = cfg.TIME_IT
@@ -56,7 +56,7 @@ class HDN_base(nn.Module):
         if rnn_type == 'LSTM_normal':
             nembedding = nhidden
         if MPS_iter < 0:
-            print 'Use random interation from 1 to 5'
+            print('Use random interation from 1 to 5')
 
         self.n_classes_obj = n_object_cats
         self.n_classes_pred = n_predicate_cats
@@ -85,7 +85,7 @@ class HDN_base(nn.Module):
 
     def reinitialize_fc_layers(self):
 
-        print 'Reinitialize the fc layers...',
+        print('Reinitialize the fc layers...', end=' ')
         weight_multiplier = 4096. / self.nhidden
         vgg16 = models.vgg16(pretrained=True)
         self.fc6_obj.fc.weight.data.copy_(vgg16.classifier[0].weight.data[:self.nhidden] * weight_multiplier)
@@ -102,8 +102,7 @@ class HDN_base(nn.Module):
         self.fc7_region.fc.weight.data.copy_(vgg16.classifier[3].weight.data[:self.nhidden, :self.nhidden] * weight_multiplier)
         self.fc7_region.fc.bias.data.copy_(vgg16.classifier[3].bias.data[:self.nhidden])
         # network.weights_normal_init(self.caption_prediction, 0.01)
-        print 'Done.'
-
+        print('Done.')
 
     @property
     def loss(self):

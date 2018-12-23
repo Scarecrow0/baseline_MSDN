@@ -7,7 +7,10 @@
 
 import numpy as np
 from sympy.physics.paulialgebra import delta
-from config import cfg
+from .config import cfg
+import torch
+import ipdb
+
 
 np.seterr(all='warn')
 
@@ -72,9 +75,9 @@ def bbox_transform_inv(boxes, deltas):
 
 
 def bbox_transform_inv_hdn(boxes, deltas):
+
     if boxes.shape[0] == 0:
         return np.zeros((0,), dtype=deltas.dtype)
-
     boxes = boxes.astype(deltas.dtype, copy=False)
 
     widths = boxes[:, 2] - boxes[:, 0] + 1.0

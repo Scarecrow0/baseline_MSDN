@@ -5,30 +5,31 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-import torch.utils.model_zoo as model_zoo
-import torchvision.models as models
-import os.path as osp
+import gc
 
-from utils.timer import Timer
-from utils.HDN_utils import check_relationship_recall
-from fast_rcnn.nms_wrapper import nms
-from rpn_msr.proposal_layer import proposal_layer as proposal_layer_py
-from rpn_msr.anchor_target_layer import anchor_target_layer as anchor_target_layer_py
-from rpn_msr.proposal_target_layer_hdn import proposal_target_layer as proposal_target_layer_py
-from fast_rcnn.bbox_transform import bbox_transform_inv_hdn, clip_boxes
-from fast_rcnn.hierarchical_message_passing_structure import Hierarchical_Message_Passing_Structure
-from Language_Model import Language_Model
-from RPN import RPN
-from fast_rcnn.config import cfg
-from utils.cython_bbox import bbox_overlaps
 
-import network
-from network import Conv2d, FC
+
+from faster_rcnn.utils.HDN_utils import check_relationship_recall
+from faster_rcnn.fast_rcnn.nms_wrapper import nms
+from faster_rcnn.rpn_msr.proposal_layer import proposal_layer as proposal_layer_py
+from faster_rcnn.rpn_msr.anchor_target_layer import anchor_target_layer as anchor_target_layer_py
+from faster_rcnn.rpn_msr.proposal_target_layer_hdn import proposal_target_layer as proposal_target_layer_py
+from faster_rcnn.fast_rcnn.bbox_transform import bbox_transform_inv_hdn, clip_boxes
+from faster_rcnn.fast_rcnn.hierarchical_message_passing_structure import Hierarchical_Message_Passing_Structure
+from faster_rcnn.Language_Model import Language_Model
+from faster_rcnn.RPN import RPN
+from faster_rcnn.fast_rcnn.config import cfg
+from faster_rcnn.utils.cython_bbox import bbox_overlaps
+
+
+
+from faster_rcnn import  network
+from faster_rcnn.network import Conv2d, FC
 # from roi_pooling.modules.roi_pool_py import RoIPool
-from roi_pooling.modules.roi_pool import RoIPool
-from vgg16 import VGG16
-from MSDN_base import HDN_base
-import pdb
+from faster_rcnn.roi_pooling.modules.roi_pool import RoIPool
+from faster_rcnn.vgg16 import VGG16
+from faster_rcnn.MSDN_base import HDN_base
+import ipdb
 
 DEBUG = False
 TIME_IT = cfg.TIME_IT
@@ -109,7 +110,14 @@ class Hierarchical_Descriptive_Model(HDN_base):
                     use_beam_search=False, graph_generation=False):
 
         self.timer.tic()
+        # todo 在inference的每个阶段打个断点 print出显存的占用 查看从一个iteration 到下一个iteration时内存变化较大的是哪个环节
+
         features, object_rois, region_rois = self.rpn(im_data, im_info, gt_objects, gt_regions)
+        print("after rpn / before region connection")
+        print(torch.cuda.memory_allocated())
+        # show_all_obj()
+        # ipdb.set_trace()
+
 
         if not self.training and gt_objects is not None:
             zeros = np.zeros((gt_objects.shape[0], 1), dtype=gt_objects.dtype)
@@ -124,15 +132,13 @@ class Hierarchical_Descriptive_Model(HDN_base):
             region_rois = network.np_to_variable(region_rois, is_cuda=True)
             # print 'region_rois[gt]:', region_rois
 
+        # print('object_rois.shape', object_rois.size())
+        # print('features.std')
+        # print(features.data.std())
 
-        # print 'object_rois.shape', object_rois.size()
-
-        # print 'features.std'
-        # print features.data.std()
         if TIME_IT:
             torch.cuda.synchronize()
-            print '\t[RPN]:      %.3fs' % self.timer.toc(average=False)
-
+            print('\t[RPN]:      %.3fs' % self.timer.toc(average=False))
 
         self.timer.tic()
         roi_data_object, roi_data_predicate, roi_data_region, mat_object, mat_phrase, mat_region = \
@@ -140,13 +146,21 @@ class Hierarchical_Descriptive_Model(HDN_base):
                     self.n_classes_obj, self.voc_sign, self.training, graph_generation=graph_generation)
         if TIME_IT:
             torch.cuda.synchronize()
-            print '\t[Proposal]: %.3fs' % self.timer.toc(average=False)
+            print('\t[Proposal]: %.3fs' % self.timer.toc(average=False))
+
+
+        print("after region connection / start roi pooling")
+        print(torch.cuda.memory_allocated())
+        # show_all_obj()
+        # ipdb.set_trace()
 
 
         self.timer.tic()
         object_rois = roi_data_object[0]
         phrase_rois = roi_data_predicate[0]
         region_rois = roi_data_region[0]
+
+
 
         # print 'object_rois_num: {}'.format(object_rois.size()[0])
         # print 'phrase_rois_num: {}'.format(phrase_rois.size()[0])
@@ -156,17 +170,17 @@ class Hierarchical_Descriptive_Model(HDN_base):
         pooled_object_features = self.roi_pool_object(features, object_rois)
         if TIME_IT:
             torch.cuda.synchronize()
-            print '\t\t[object_pooling]: %.3fs' % self.timer.toc(average=False)
+            print('\t\t[object_pooling]: %.3fs' % self.timer.toc(average=False))
         #print 'pool5_object.std'
         #print pooled_object_features.data.std()
         pooled_object_features = pooled_object_features.view(pooled_object_features.size()[0], -1)
         if TIME_IT:
             torch.cuda.synchronize()
-            print '\t\t[object_feature_view]: %.3fs' % self.timer.toc(average=False)
+            print('\t\t[object_feature_view]: %.3fs' % self.timer.toc(average=False))
         pooled_object_features = self.fc6_obj(pooled_object_features)
         if TIME_IT:
             torch.cuda.synchronize()
-            print '\t\t[object_feature_fc6]: %.3fs' % self.timer.toc(average=False)
+            print('\t\t[object_feature_fc6]: %.3fs' % self.timer.toc(average=False))
         if self.dropout:
             pooled_object_features = F.dropout(pooled_object_features, training = self.training)
         #print 'fc6_object.std'
@@ -174,7 +188,7 @@ class Hierarchical_Descriptive_Model(HDN_base):
         pooled_object_features = self.fc7_obj(pooled_object_features)
         if TIME_IT:
             torch.cuda.synchronize()
-            print '\t\t[object_feature_fc7]: %.3fs' % self.timer.toc(average=False)
+            print('\t\t[object_feature_fc7]: %.3fs' % self.timer.toc(average=False))
         if self.dropout:
             pooled_object_features = F.dropout(pooled_object_features, training = self.training)
         #print 'fc7_object.std'
@@ -183,17 +197,17 @@ class Hierarchical_Descriptive_Model(HDN_base):
         pooled_phrase_features = self.roi_pool_phrase(features, phrase_rois)
         if TIME_IT:
             torch.cuda.synchronize()
-            print '\t\t[phrase_pooling]: %.3fs' % self.timer.toc(average=False)
+            print('\t\t[phrase_pooling]: %.3fs' % self.timer.toc(average=False))
         #print 'pool5_phrase.std'
         #print pooled_phrase_features.data.std()
         pooled_phrase_features = pooled_phrase_features.view(pooled_phrase_features.size()[0], -1)
         if TIME_IT:
             torch.cuda.synchronize()
-            print '\t\t[phrase_feature_view]: %.3fs' % self.timer.toc(average=False)
+            print('\t\t[phrase_feature_view]: %.3fs' % self.timer.toc(average=False))
         pooled_phrase_features = self.fc6_phrase(pooled_phrase_features)
         if TIME_IT:
             torch.cuda.synchronize()
-            print '\t\t[phrase_feature_fc6]: %.3fs' % self.timer.toc(average=False)
+            print('\t\t[phrase_feature_fc6]: %.3fs' % self.timer.toc(average=False))
         if self.dropout:
             pooled_phrase_features = F.dropout(pooled_phrase_features, training = self.training)
         #print 'fc6_phrase.std'
@@ -201,7 +215,7 @@ class Hierarchical_Descriptive_Model(HDN_base):
         pooled_phrase_features = self.fc7_phrase(pooled_phrase_features)
         if TIME_IT:
             torch.cuda.synchronize()
-            print '\t\t[phrase_feature_fc7]: %.3fs' % self.timer.toc(average=False)
+            print('\t\t[phrase_feature_fc7]: %.3fs' % self.timer.toc(average=False))
         if self.dropout:
             pooled_phrase_features = F.dropout(pooled_phrase_features, training = self.training)
         #print 'fc7_phrase.std'
@@ -210,17 +224,17 @@ class Hierarchical_Descriptive_Model(HDN_base):
         pooled_region_features = self.roi_pool_region(features, region_rois)
         if TIME_IT:
             torch.cuda.synchronize()
-            print '\t\t[region_pooling]: %.3fs' % self.timer.toc(average=False)
+            print('\t\t[region_pooling]: %.3fs' % self.timer.toc(average=False))
         #print 'pool5_region.std'
         #print pooled_region_features.data.std()
         pooled_region_features = pooled_region_features.view(pooled_region_features.size()[0], -1)
         if TIME_IT:
             torch.cuda.synchronize()
-            print '\t\t[region_feature_view]: %.3fs' % self.timer.toc(average=False)
+            print('\t\t[region_feature_view]: %.3fs' % self.timer.toc(average=False))
         pooled_region_features = self.fc6_region(pooled_region_features)
         if TIME_IT:
             torch.cuda.synchronize()
-            print '\t\t[region_feature_fc6]: %.3fs' % self.timer.toc(average=False)
+            print('\t\t[region_feature_fc6]: %.3fs' % self.timer.toc(average=False))
         if self.dropout:
             pooled_region_features = F.dropout(pooled_region_features, training = self.training)
         #print 'fc6_region.std'
@@ -228,7 +242,7 @@ class Hierarchical_Descriptive_Model(HDN_base):
         pooled_region_features = self.fc7_region(pooled_region_features)
         if TIME_IT:
             torch.cuda.synchronize()
-            print '\t\t[region_feature_fc7]: %.3fs' % self.timer.toc(average=False)
+            print('\t\t[region_feature_fc7]: %.3fs' % self.timer.toc(average=False))
         if self.dropout:
             pooled_region_features = F.dropout(pooled_region_features, training = self.training)
         #print 'fc7_region.std'
@@ -241,12 +255,17 @@ class Hierarchical_Descriptive_Model(HDN_base):
         # bounding box regression before message passing
         bbox_object = self.bbox_obj(F.relu(pooled_object_features))
 
+        print("after roi pooling / start iteration")
+        print(torch.cuda.memory_allocated())
+        # show_all_obj()
+        # ipdb.set_trace()
+
         if self.use_region_reg:
             bbox_region = self.bbox_region(F.relu(pooled_region_features))
 
         if TIME_IT:
             torch.cuda.synchronize()
-            print '\t[Pre-MPS]:  %.3fs' % self.timer.toc(average=False)
+            print('\t[Pre-MPS]:  %.3fs' % self.timer.toc(average=False))
 
         self.timer.tic()
         # hierarchical message passing structure
@@ -256,15 +275,20 @@ class Hierarchical_Descriptive_Model(HDN_base):
             else:
                 self.MPS_iter = cfg.TEST.MPS_ITER_NUM
 
-        for i in xrange(self.MPS_iter):
+
+        for i in range(self.MPS_iter):
             pooled_object_features, pooled_phrase_features, pooled_region_features = \
                 self.mps(pooled_object_features, pooled_phrase_features, pooled_region_features, \
                             mat_object, mat_phrase, mat_region)
+            print("after %d iteration" % i)
+            print(torch.cuda.memory_allocated())
+            # ipdb.set_trace()
+
+
         if TIME_IT:
             torch.cuda.synchronize()
-            print '\t[Passing]:  %.3fs' % self.timer.toc(average=False)
+            print('\t[Passing]:  %.3fs' % self.timer.toc(average=False))
 
-            
         # print 'post_mps_object.std', pooled_object_features.data.std()
         # print 'post_mps_phrase.std', pooled_phrase_features.data.std()
         # print 'post_mps_region.std', pooled_region_features.data.std()
@@ -281,6 +305,11 @@ class Hierarchical_Descriptive_Model(HDN_base):
         cls_score_predicate = self.score_pred(pooled_phrase_features)
         cls_prob_predicate = F.softmax(cls_score_predicate)
 
+        print("after iterations / start classify ")
+        print(torch.cuda.memory_allocated())
+        # show_all_obj()
+        # ipdb.set_trace()
+
         if not self.use_region_reg:
             bbox_region = Variable(torch.zeros(pooled_region_features.size(0), 4).cuda())
 
@@ -293,7 +322,7 @@ class Hierarchical_Descriptive_Model(HDN_base):
         
         if TIME_IT:
             torch.cuda.synchronize()
-            print '\t[Post-MPS]: %.3fs' % self.timer.toc(average=False)
+            print('\t[Post-MPS]: %.3fs' % self.timer.toc(average=False))
 
         # if DEBUG:
         #     print 'cls_score_predicate'
@@ -333,7 +362,9 @@ class Hierarchical_Descriptive_Model(HDN_base):
                 caption_logprobs = None 
 
         caption_logprobs = F.log_softmax(cls_objectiveness_region)[:, 1].squeeze().cpu().data
-
+        del pooled_object_features
+        del pooled_phrase_features
+        del pooled_region_features
         return (cls_prob_object, bbox_object, object_rois), \
                 (cls_prob_predicate, mat_phrase), \
                 (region_caption, bbox_region, region_rois, caption_logprobs)
@@ -396,7 +427,7 @@ class Hierarchical_Descriptive_Model(HDN_base):
                 (region_rois, region_seq, bbox_targets_region, bbox_inside_weights_region, bbox_outside_weights_region), \
                 mat_object, mat_phrase, mat_region
 
-    def interpret_HDN(self, cls_prob, bbox_pred, rois, cls_prob_predicate, 
+    def  interpret_HDN(self, cls_prob, bbox_pred, rois, cls_prob_predicate,
                         mat_phrase, im_info, nms=True, clip=True, min_score=0.0, 
                         top_N=100, use_gt_boxes=False):
         scores, inds = cls_prob[:, 1:].data.max(1)
@@ -417,7 +448,11 @@ class Hierarchical_Descriptive_Model(HDN_base):
         box_deltas = np.asarray([
             box_deltas[i, (inds[i] * 4): (inds[i] * 4 + 4)] for i in range(len(inds))
         ], dtype=np.float)
-        boxes = rois.data.cpu().numpy()[keep, 1:5] / im_info[0][2]
+
+        boxes = rois.data.cpu() [keep, 1:5] / im_info[0][2]
+        boxes = boxes.numpy()
+
+
         if use_gt_boxes:
             nms = False
             clip = False
@@ -598,9 +633,16 @@ class Hierarchical_Descriptive_Model(HDN_base):
             gt_boxes_regions = gt_regions[:, :4] * im_info[2]
         else:
             gt_boxes_regions = None
-        
+
+
         object_result, predicate_result, region_result = \
             self(im_data, im_info, gt_boxes_object, gt_regions=gt_boxes_regions, graph_generation=True)
+
+
+        print("MSDN inference done")
+        print(torch.cuda.memory_allocated(0))
+        # show_all_obj()
+        # ipdb.set_trace()
 
         cls_prob_object, bbox_object, object_rois = object_result[:3]
         cls_prob_predicate, mat_phrase = predicate_result[:2]
@@ -611,6 +653,12 @@ class Hierarchical_Descriptive_Model(HDN_base):
                 self.interpret_HDN(cls_prob_object, bbox_object, object_rois, 
                             cls_prob_predicate, mat_phrase, im_info, 
                             nms=nms, top_N=max(top_Ns), use_gt_boxes=use_gt_boxes)
+
+
+        print("trans every thing to proper result")
+        print(torch.cuda.memory_allocated(0))
+        # show_all_obj()
+        # ipdb.set_trace()
 
         gt_objects[:, :4] /= im_info[0][2]
         rel_cnt, rel_correct_cnt = check_relationship_recall(gt_objects, gt_relationships, 
@@ -639,3 +687,18 @@ class Hierarchical_Descriptive_Model(HDN_base):
         self.fg_cnt_reg = fg_cnt
         self.bg_cnt_reg = bg_cnt
         return loss_objectiveness
+
+
+
+
+def show_all_obj():
+    objs = []
+    for o in gc.get_objects():
+        if torch.is_tensor(o) :
+            objs.append(str(type(o)) + str(o.size()))
+
+    objs = sorted(objs)
+    for each in objs:
+        print(each)
+
+

@@ -16,10 +16,18 @@ from faster_rcnn.fast_rcnn.config import cfg
 from faster_rcnn.datasets.visual_genome_loader import visual_genome
 from faster_rcnn.utils.HDN_utils import get_model_name, group_features
 
-import pdb
+import  ipdb
 
 # To log the training process
 from tensorboard_logger import configure, log_value
+
+
+os.environ['GPU_DEBUG']='0'
+os.environ['CUDA_LAUNCH_BLOCKING']='0'
+
+
+
+
 
 TIME_IT = cfg.TIME_IT
 parser = argparse.ArgumentParser('Options for training Hierarchical Descriptive Model in pytorch')
@@ -77,10 +85,10 @@ optimizer_select = 0
 def main():
     global args, optimizer_select
     # To set the model name automatically
-    print args
+    print(args)
     lr = args.lr
     args = get_model_name(args)
-    print 'Model name: {}'.format(args.model_name)
+    print('Model name: {}'.format(args.model_name))
 
     # To set the random seed
     random.seed(args.seed)
@@ -92,8 +100,8 @@ def main():
     test_set = visual_genome('small', 'test')
     print("Done.")
 
-    train_loader = torch.utils.data.DataLoader(train_set, batch_size=1, shuffle=True, num_workers=8, pin_memory=True)
-    test_loader = torch.utils.data.DataLoader(test_set, batch_size=1, shuffle=False, num_workers=8, pin_memory=True)
+    train_loader = torch.utils.data.DataLoader(train_set, batch_size=1, shuffle=True, num_workers=8, pin_memory=False)
+    test_loader = torch.utils.data.DataLoader(test_set, batch_size=1, shuffle=False, num_workers=1, pin_memory=False)
 
     # Model declaration
     net = Hierarchical_Descriptive_Model(nhidden=args.mps_feature_len,
@@ -118,8 +126,8 @@ def main():
 
     params = list(net.parameters())
     for param in params:
-        print param.size()
-    print net 
+        print(param.size())
+    print(net)
 
     # To group up the features
     vgg_features_fix, vgg_features_var, rpn_features, hdn_features, language_features = group_features(net)
@@ -136,7 +144,7 @@ def main():
     network.set_trainable(net, False)
     #  network.weights_normal_init(net, dev=0.01)
     if args.finetune_language_model:
-        print 'Only finetuning the language model from: {}'.format(args.resume_model)
+        print('Only finetuning the language model from: {}'.format(args.resume_model))
         args.train_all = False
         if len(args.resume_model) == 0:
             raise Exception('[resume_model] not specified')
@@ -145,7 +153,7 @@ def main():
         
 
     elif args.load_RPN:
-        print 'Loading pretrained RPN: {}'.format(args.saved_model_path)
+        print('Loading pretrained RPN: {}'.format(args.saved_model_path))
         args.train_all = False
         network.load_net(args.saved_model_path, net.rpn)
         net.reinitialize_fc_layers()
@@ -153,7 +161,7 @@ def main():
 
 
     elif args.resume_training:
-        print 'Resume training from: {}'.format(args.resume_model)
+        print('Resume training from: {}'.format(args.resume_model))
         if len(args.resume_model) == 0:
             raise Exception('[resume_model] not specified')
         network.load_net(args.resume_model, net)
@@ -161,7 +169,7 @@ def main():
         optimizer_select = 2
 
     else:
-        print 'Training from scratch.'
+        print('Training from scratch.')
         net.rpn.initialize_parameters()
         net.reinitialize_fc_layers()
         optimizer_select = 0
@@ -180,7 +188,8 @@ def main():
 
 
     if args.evaluate:
-        recall = test(test_loader, net, top_Ns)
+        with torch.no_grad():
+            recall = test(test_loader, net, top_Ns)
         print('======= Testing Result =======') 
         for idx, top_N in enumerate(top_Ns):
             print('[Recall@{top_N:d}] {recall:2.3f}%% (best: {best_recall:2.3f}%%)'.format(
@@ -199,7 +208,9 @@ def main():
 
             # Testing
             # network.set_trainable(net, False) # Without backward(), requires_grad takes no effect
-
+            import sys
+            import gpu_profile
+            sys.settrace(gpu_profile.gpu_profile)
             recall = test(test_loader, net, top_Ns)
 
             if np.all(recall > best_recall):
@@ -217,8 +228,8 @@ def main():
             if epoch % args.step_size == 0 and epoch > 0:
                 lr /= 10
                 args.lr = lr
-                print '[learning rate: {}]'.format(lr)
-            
+                print('[learning rate: {}]'.format(lr))
+
                 args.enable_clip_gradient = False
                 if not args.finetune_language_model:
                     args.train_all = True
@@ -227,7 +238,7 @@ def main():
                 optimizer = network.get_optimizer(lr, optimizer_select, args, 
                             vgg_features_var, rpn_features, hdn_features, language_features)
 
-        
+
 
 
 
@@ -345,7 +356,7 @@ def test(test_loader, net, top_Ns):
 
     global args
 
-    print '========== Testing ======='
+    print('========== Testing =======')
     net.eval()
     # For efficiency inference
     languge_state = net.use_language_loss
@@ -361,20 +372,31 @@ def test(test_loader, net, top_Ns):
     end = time.time()
     for i, (im_data, im_info, gt_objects, gt_relationships, gt_regions) in enumerate(test_loader):
         # Forward pass
+        print("start %d inference" % i)
+        print(torch.cuda.memory_allocated(0))
+        # ipdb.set_trace()
+
+
         total_cnt_t, rel_cnt_correct_t = net.evaluate(
             im_data, im_info, gt_objects.numpy()[0], gt_relationships.numpy()[0], gt_regions.numpy()[0], 
             top_Ns = top_Ns, nms=True)
+
+        print("complete %d inference" % i)
+        print(torch.cuda.memory_allocated(0))
+        # ipdb.set_trace()
+
         rel_cnt += total_cnt_t
         rel_cnt_correct += rel_cnt_correct_t
         batch_time.update(time.time() - end)
         end = time.time()
-        if (i + 1) % 500 == 0 and i > 0:
+        if (i + 1) % 5 == 0 and i > 0:
             for idx, top_N in enumerate(top_Ns):
-                print '[%d/%d][Evaluation] Top-%d Recall: %2.3f%%' % (
-                    i+1, len(test_loader), top_N, rel_cnt_correct[idx] / float(rel_cnt) * 100)
+                print('[%d/%d][Evaluation] Top-%d Recall: %2.3f%%' % (
+                    i + 1, len(test_loader), top_N, rel_cnt_correct[idx] / float(rel_cnt) * 100))
+
 
     recall = rel_cnt_correct / rel_cnt
-    print '====== Done Testing ===='
+    print('====== Done Testing ====')
     # Restore the related states
     net.use_language_loss = languge_state
     net.use_region_reg = region_reg_state

@@ -5,9 +5,9 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.nn import Parameter
 from ..utils.timer import Timer
-import pdb
-from mps_base import Hierarchical_Message_Passing_Structure_base
-from config import cfg
+import ipdb
+from .mps_base import Hierarchical_Message_Passing_Structure_base
+from .config import cfg
 
 TIME_IT = cfg.TIME_IT
 
@@ -32,8 +32,7 @@ class Hierarchical_Message_Passing_Structure(Hierarchical_Message_Passing_Struct
 		out_feature_object = feature_obj + self.GRU_object(GRU_input_feature_object, feature_obj)
 		if TIME_IT:
 			torch.cuda.synchronize()
-			print '\t\t[object pass]:\t%.3fs' % (t.toc(average=False))
-
+			print('\t\t[object pass]:\t%.3fs' % (t.toc(average=False)))
 
 		# phrase updating
 		t.tic()
@@ -48,7 +47,7 @@ class Hierarchical_Message_Passing_Structure(Hierarchical_Message_Passing_Struct
 		GRU_input_feature_phrase =  phrase_sub / 3. + phrase_obj / 3. + phrase_region / 3.
 		if TIME_IT:
 			torch.cuda.synchronize()
-			print '\t\t[phrase pass]:\t%.3fs' % (t.toc(average=False))
+			print('\t\t[phrase pass]:\t%.3fs' % (t.toc(average=False)))
 		out_feature_phrase = feature_phrase + self.GRU_phrase(GRU_input_feature_phrase, feature_phrase)
 
 		# region updating
@@ -57,6 +56,6 @@ class Hierarchical_Message_Passing_Structure(Hierarchical_Message_Passing_Struct
 		out_feature_region = feature_region + self.GRU_region(GRU_input_feature_region, feature_region)
 		if TIME_IT:
 			torch.cuda.synchronize()
-			print '\t\t[region pass]:\t%.3fs' % (t.toc(average=False))
+			print('\t\t[region pass]:\t%.3fs' % (t.toc(average=False)))
 
 		return out_feature_object, out_feature_phrase, out_feature_region

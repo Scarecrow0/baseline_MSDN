@@ -51,13 +51,12 @@ def load_net(fname, net):
             if k in h5f:
                 param = torch.from_numpy(np.asarray(h5f[k]))
                 v.copy_(param)
-                print '[Copied]: {}'.format(k)
+                print('[Copied]: {}'.format(k))
             else:
-                print '[Missed]: {}'.format(k)
+                print('[Missed]: {}'.format(k))
     except Exception as e:
         pdb.set_trace()
-        print '[Loaded net not complete] Parameter[{}] Size Mismatch...'.format(k)
-        
+        print('[Loaded net not complete] Parameter[{}] Size Mismatch...'.format(k))
 
 
 def np_to_variable(x, is_cuda=True, dtype=torch.FloatTensor):

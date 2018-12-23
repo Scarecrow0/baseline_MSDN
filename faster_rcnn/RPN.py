@@ -5,22 +5,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from utils.timer import Timer
-from utils.blob import im_list_to_blob
-from fast_rcnn.nms_wrapper import nms
-from rpn_msr.proposal_layer import proposal_layer as proposal_layer_py
-from rpn_msr.anchor_target_layer import anchor_target_layer as anchor_target_layer_py
-from fast_rcnn.bbox_transform import bbox_transform_inv, clip_boxes
+from faster_rcnn.utils.timer import Timer
+from faster_rcnn.utils.blob import im_list_to_blob
+from faster_rcnn.fast_rcnn.nms_wrapper import nms
+from faster_rcnn.rpn_msr.proposal_layer import proposal_layer as proposal_layer_py
+from faster_rcnn.rpn_msr.anchor_target_layer import anchor_target_layer as anchor_target_layer_py
+from faster_rcnn.fast_rcnn.bbox_transform import bbox_transform_inv, clip_boxes
 
 
-import network
-from network import Conv2d, FC
+from . import network
+from .network import Conv2d, FC
 # from roi_pooling.modules.roi_pool_py import RoIPool
-from roi_pooling.modules.roi_pool import RoIPool
-from vgg16 import VGG16
 import torchvision.models as models
-import torch.utils.model_zoo as model_zoo
-import math
 
 DEBUG = False
 
@@ -57,13 +53,13 @@ class RPN(nn.Module):
         super(RPN, self).__init__()
 
         if use_kmeans_anchors:
-            print 'using k-means anchors'
+            print('using k-means anchors')
             self.anchor_scales = self.anchor_scales_kmeans
             self.anchor_ratios = self.anchor_ratios_kmeans
             self.anchor_scales_region = self.anchor_scales_kmeans_region
             self.anchor_ratios_region = self.anchor_ratios_kmeans_region
         else:
-            print 'using normal anchors'
+            print('using normal anchors')
             self.anchor_scales, self.anchor_ratios = \
                 np.meshgrid(self.anchor_scales_normal, self.anchor_ratios_normal, indexing='ij')
             self.anchor_scales = self.anchor_scales.reshape(-1)
@@ -124,7 +120,7 @@ class RPN(nn.Module):
     def forward(self, im_data, im_info, gt_objects=None, gt_regions=None, dontcare_areas=None):
 
 
-        im_data = Variable(im_data.cuda())
+        im_data = im_data.cuda()
 
         features = self.features(im_data)
         # print 'features.std()', features.data.std()
@@ -169,8 +165,8 @@ class RPN(nn.Module):
                                                 im_info, self.anchor_scales_region, self.anchor_ratios_region, \
                                                 self._feat_stride, is_region=True)
             if DEBUG:
-                print 'rpn_data', rpn_data
-                print 'rpn_cls_score_reshape', rpn_cls_score_reshape
+                print('rpn_data', rpn_data)
+                print('rpn_cls_score_reshape', rpn_cls_score_reshape)
 
             self.cross_entropy, self.loss_box = \
                 self.build_loss(rpn_cls_score_reshape, rpn_bbox_pred, rpn_data)
@@ -200,24 +196,22 @@ class RPN(nn.Module):
         error = torch.sum(torch.abs(predict - rpn_label.data))
         #  try:
         if predict.size()[0] < 256:
-            print predict.size()
-            print rpn_label.size()
-            print fg_cnt
+            print(predict.size())
+            print(rpn_label.size())
+            print(fg_cnt)
 
         if is_region:
-            self.tp_region = torch.sum(predict[:fg_cnt].eq(rpn_label.data[:fg_cnt]))
-            self.tf_region = torch.sum(predict[fg_cnt:].eq(rpn_label.data[fg_cnt:]))
-            self.fg_cnt_region = fg_cnt
-            self.bg_cnt_region = bg_cnt
+            tp_region = torch.sum(predict[:fg_cnt].eq(rpn_label.data[:fg_cnt]))
+            tf_region = torch.sum(predict[fg_cnt:].eq(rpn_label.data[fg_cnt:]))
+
             if DEBUG:
-                print 'accuracy: %2.2f%%' % ((self.tp + self.tf) / float(fg_cnt + bg_cnt) * 100)
+                print('accuracy: %2.2f%%' % ((tp_region + tf_region) / float(fg_cnt + bg_cnt) * 100))
         else:
-            self.tp = torch.sum(predict[:fg_cnt].eq(rpn_label.data[:fg_cnt]))
-            self.tf = torch.sum(predict[fg_cnt:].eq(rpn_label.data[fg_cnt:]))
-            self.fg_cnt = fg_cnt
-            self.bg_cnt = bg_cnt
+            tp = torch.sum(predict[:fg_cnt].eq(rpn_label.data[:fg_cnt]))
+            tf = torch.sum(predict[fg_cnt:].eq(rpn_label.data[fg_cnt:]))
+
             if DEBUG:
-                print 'accuracy: %2.2f%%' % ((self.tp + self.tf) / float(fg_cnt + bg_cnt) * 100)
+                print('accuracy: %2.2f%%' % ((tp + tf) / float(fg_cnt + bg_cnt) * 100))
 
         rpn_cross_entropy = F.cross_entropy(rpn_cls_score, rpn_label)
         # print rpn_cross_entropy
