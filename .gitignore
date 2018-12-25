@@ -110,3 +110,4 @@ log/*
 Debug_Code.ipynb
 eval/*.json
 .DS_Store
+logs*.*
