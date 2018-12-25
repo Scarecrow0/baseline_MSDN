@@ -98,14 +98,15 @@ extension-ffi
 demo_mot.py
 
 
-# defined by yikang
-model/
-data/
+# defined by user
+model/*
+data/*
 data
 model
 output
-output/
-log/
+output/*
+log/*
 *.mat
 Debug_Code.ipynb
 eval/*.json
+.DS_Store
